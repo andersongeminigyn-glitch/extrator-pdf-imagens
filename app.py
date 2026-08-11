@@ -31,7 +31,9 @@ def processar_pdf(pdf_file):
         largura = pagina.rect.width
         altura = pagina.rect.height
         meio = largura / 2
-        matriz = fitz.Matrix(2, 2)
+        # O Render Free tem apenas 0.1 vCPU e 512MB RAM.
+        # A matriz (2,2) exige MUITA memória e CPU. Reduzimos para (1.5, 1.5) para evitar crash (Erro 502) e lentidão extrema na nuvem.
+        matriz = fitz.Matrix(1.5, 1.5)
 
         # Capa (primeira página)
         if numero_pagina == 1:
@@ -92,15 +94,31 @@ with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
     with gr.Row():
         pdf_input = gr.File(label="Selecione o arquivo PDF", file_types=[".pdf"])
     
-    btn_processar = gr.Button("✂️ Extrair e Dividir Imagens", variant="primary")
+    btn_processar = gr.Button("✂️ Extrair e Dividir Imagens", variant="primary", interactive=False)
     
     status_output = gr.Textbox(label="Status do Processamento", interactive=False)
     zip_output = gr.File(label="Baixar Imagens em ZIP (.zip)")
+
+    # Habilitar o botão apenas quando o arquivo PDF for enviado
+    pdf_input.change(
+        fn=lambda x: gr.update(interactive=bool(x)), 
+        inputs=[pdf_input], 
+        outputs=[btn_processar]
+    )
     
+    # Desabilitar botão durante o processamento para evitar cliques duplos
     btn_processar.click(
+        fn=lambda: gr.update(interactive=False),
+        inputs=[],
+        outputs=[btn_processar]
+    ).then(
         fn=processar_pdf,
         inputs=[pdf_input],
         outputs=[zip_output, status_output]
+    ).then(
+        fn=lambda: gr.update(interactive=True),
+        inputs=[],
+        outputs=[btn_processar]
     )
 
 if __name__ == "__main__":
