@@ -1,11 +1,11 @@
-import fitz
+import pymupdf
 import tempfile
 import zipfile
 import os
 from pathlib import Path
 import gradio as gr
 
-def processar_pdf(pdf_file):
+def processar_pdf(pdf_file: str | None):
     if pdf_file is None:
         return None, "Por favor, envie um arquivo PDF."
     
@@ -13,8 +13,8 @@ def processar_pdf(pdf_file):
     temp_dir = tempfile.mkdtemp()
     pasta_saida = Path(temp_dir)
     
-    pdf_path = Path(pdf_file.name)
-    documento = fitz.open(pdf_path)
+    pdf_path = Path(pdf_file)
+    documento = pymupdf.open(pdf_path)
     total_paginas = len(documento)
     
     counter = 1
@@ -33,7 +33,7 @@ def processar_pdf(pdf_file):
         meio = largura / 2
         # O Render Free tem apenas 0.1 vCPU e 512MB RAM.
         # A matriz (2,2) exige MUITA memória e CPU. Reduzimos para (1.5, 1.5) para evitar crash (Erro 502) e lentidão extrema na nuvem.
-        matriz = fitz.Matrix(1.5, 1.5)
+        matriz = pymupdf.Matrix(1.5, 1.5)
 
         # Capa (primeira página)
         if numero_pagina == 1:
@@ -58,7 +58,7 @@ def processar_pdf(pdf_file):
             continue
 
         # Páginas internas (esquerda e direita)
-        clip_esq = fitz.Rect(0, 0, meio, altura)
+        clip_esq = pymupdf.Rect(0, 0, meio, altura)
         pix_esq = pagina.get_pixmap(matrix=matriz, clip=clip_esq)
         nome_esq = format_num_for_filename(counter) + ".png"
         caminho_esq = pasta_saida / nome_esq
@@ -67,7 +67,7 @@ def processar_pdf(pdf_file):
         salvar_imagem_com_nome(pix_esq, caminho_esq)
         counter += 1
 
-        clip_dir = fitz.Rect(meio, 0, largura, altura)
+        clip_dir = pymupdf.Rect(meio, 0, largura, altura)
         pix_dir = pagina.get_pixmap(matrix=matriz, clip=clip_dir)
         nome_dir = format_num_for_filename(counter) + ".png"
         caminho_dir = pasta_saida / nome_dir
@@ -92,7 +92,11 @@ with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
     gr.Markdown("Faça upload do seu PDF do catálogo para extrair a capa, contra-capa e dividir as páginas duplas automaticamente.")
     
     with gr.Row():
-        pdf_input = gr.File(label="Selecione o arquivo PDF", file_types=[".pdf"])
+        pdf_input = gr.File(
+            label="Selecione o arquivo PDF",
+            file_types=[".pdf"],
+            type="filepath",
+        )
     
     btn_processar = gr.Button("✂️ Extrair e Dividir Imagens", variant="primary", interactive=False)
     
@@ -101,7 +105,7 @@ with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
 
     # Habilitar o botão apenas quando o arquivo PDF for enviado
     pdf_input.change(
-        fn=lambda x: gr.update(interactive=bool(x)), 
+        fn=lambda x: gr.update(interactive=bool(x)),
         inputs=[pdf_input], 
         outputs=[btn_processar]
     )
