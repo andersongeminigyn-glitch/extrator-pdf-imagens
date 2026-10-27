@@ -2,54 +2,23 @@ import pymupdf
 import tempfile
 import zipfile
 import os
-import math
 from pathlib import Path
 import gradio as gr
-
-MAX_RENDER_SCALE = 1.5
-MAX_RENDER_PIXELS = 4_000_000
 
 
 def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
     if pdf_file is None:
         return None, "Por favor, envie um arquivo PDF."
-    
+
     temp_dir = tempfile.mkdtemp()
     pasta_saida = Path(temp_dir)
     pdf_path = Path(pdf_file)
     counter = 1
-    
+
     def format_num_for_filename(n):
         if n >= 100:
             return str(n)
         return str(n).zfill(2)
-
-    def salvar_imagem_com_nome(pagina, caminho, clip=None):
-        regiao = clip if clip is not None else pagina.rect
-        escala = min(
-            MAX_RENDER_SCALE,
-            math.sqrt(MAX_RENDER_PIXELS / (regiao.width * regiao.height)),
-        )
-        largura_pixels = math.ceil(regiao.x1 * escala) - math.floor(
-            regiao.x0 * escala
-        )
-        altura_pixels = math.ceil(regiao.y1 * escala) - math.floor(
-            regiao.y0 * escala
-        )
-        while largura_pixels * altura_pixels > MAX_RENDER_PIXELS:
-            escala *= math.sqrt(
-                MAX_RENDER_PIXELS / (largura_pixels * altura_pixels)
-            )
-            largura_pixels = math.ceil(regiao.x1 * escala) - math.floor(
-                regiao.x0 * escala
-            )
-            altura_pixels = math.ceil(regiao.y1 * escala) - math.floor(
-                regiao.y0 * escala
-            )
-
-        matriz = pymupdf.Matrix(escala, escala)
-        pixmap = pagina.get_pixmap(matrix=matriz, clip=clip, alpha=False)
-        pixmap.save(str(caminho))
 
     def proximo_caminho():
         nonlocal counter
@@ -58,6 +27,8 @@ def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
         if caminho.exists():
             caminho = caminho.with_name(f"{caminho.stem}_1{caminho.suffix}")
         return caminho
+
+    matriz = pymupdf.Matrix(2, 2)
 
     with pymupdf.open(pdf_path) as documento:
         total_paginas = len(documento)
@@ -68,23 +39,27 @@ def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
             )
 
             if numero_pagina == 1 or numero_pagina == total_paginas:
-                salvar_imagem_com_nome(pagina, proximo_caminho())
+                pixmap = pagina.get_pixmap(matrix=matriz, alpha=False)
+                pixmap.save(str(proximo_caminho()))
                 continue
 
             largura = pagina.rect.width
             altura = pagina.rect.height
             meio = largura / 2
+
             clip_esq = pymupdf.Rect(0, 0, meio, altura)
-            salvar_imagem_com_nome(pagina, proximo_caminho(), clip_esq)
+            pix_esq = pagina.get_pixmap(matrix=matriz, clip=clip_esq, alpha=False)
+            pix_esq.save(str(proximo_caminho()))
 
             clip_dir = pymupdf.Rect(meio, 0, largura, altura)
-            salvar_imagem_com_nome(pagina, proximo_caminho(), clip_dir)
-    
+            pix_dir = pagina.get_pixmap(matrix=matriz, clip=clip_dir, alpha=False)
+            pix_dir.save(str(proximo_caminho()))
+
     zip_path = pasta_saida / "imagens_extraidas.zip"
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for file in pasta_saida.glob("*.png"):
+    with zipfile.ZipFile(zip_path, "w") as zipf:
+        for file in sorted(pasta_saida.glob("*.png"), key=lambda f: f.name):
             zipf.write(file, arcname=file.name)
-            
+
     mensagem = f"Sucesso! {counter - 1} imagens foram extraídas e compactadas."
     progress(1, desc="Concluído")
     return str(zip_path), mensagem
