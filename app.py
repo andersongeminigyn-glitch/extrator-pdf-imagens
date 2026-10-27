@@ -2,11 +2,12 @@ import pymupdf
 import tempfile
 import zipfile
 import os
+import gc
 from pathlib import Path
 import gradio as gr
 
 
-def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
+def processar_pdf(pdf_file: str | None):
     if pdf_file is None:
         return None, "Por favor, envie um arquivo PDF."
 
@@ -28,19 +29,16 @@ def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
             caminho = caminho.with_name(f"{caminho.stem}_1{caminho.suffix}")
         return caminho
 
-    matriz = pymupdf.Matrix(2, 2)
+    matriz = pymupdf.Matrix(1.8, 1.8)
 
     with pymupdf.open(pdf_path) as documento:
         total_paginas = len(documento)
         for numero_pagina, pagina in enumerate(documento, start=1):
-            progress(
-                (numero_pagina - 1) / total_paginas,
-                desc=f"Processando página {numero_pagina}/{total_paginas}",
-            )
-
             if numero_pagina == 1 or numero_pagina == total_paginas:
-                pixmap = pagina.get_pixmap(matrix=matriz, alpha=False)
+                pixmap = pagina.get_pixmap(matrix=matriz, alpha=False, annots=False)
                 pixmap.save(str(proximo_caminho()))
+                del pixmap
+                gc.collect()
                 continue
 
             largura = pagina.rect.width
@@ -48,20 +46,24 @@ def processar_pdf(pdf_file: str | None, progress=gr.Progress()):
             meio = largura / 2
 
             clip_esq = pymupdf.Rect(0, 0, meio, altura)
-            pix_esq = pagina.get_pixmap(matrix=matriz, clip=clip_esq, alpha=False)
+            pix_esq = pagina.get_pixmap(matrix=matriz, clip=clip_esq, alpha=False, annots=False)
             pix_esq.save(str(proximo_caminho()))
+            del pix_esq
+            gc.collect()
 
             clip_dir = pymupdf.Rect(meio, 0, largura, altura)
-            pix_dir = pagina.get_pixmap(matrix=matriz, clip=clip_dir, alpha=False)
+            pix_dir = pagina.get_pixmap(matrix=matriz, clip=clip_dir, alpha=False, annots=False)
             pix_dir.save(str(proximo_caminho()))
+            del pix_dir
+            gc.collect()
 
     zip_path = pasta_saida / "imagens_extraidas.zip"
-    with zipfile.ZipFile(zip_path, "w") as zipf:
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zipf:
         for file in sorted(pasta_saida.glob("*.png"), key=lambda f: f.name):
             zipf.write(file, arcname=file.name)
 
     mensagem = f"Sucesso! {counter - 1} imagens foram extraídas e compactadas."
-    progress(1, desc="Concluído")
+    gc.collect()
     return str(zip_path), mensagem
 
 with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
@@ -87,23 +89,13 @@ with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
         outputs=[btn_processar]
     )
     
-    # Desabilitar botão durante o processamento para evitar cliques duplos
     btn_processar.click(
-        fn=lambda: gr.update(interactive=False),
-        inputs=[],
-        outputs=[btn_processar]
-    ).then(
         fn=processar_pdf,
         inputs=[pdf_input],
-        outputs=[zip_output, status_output]
-    ).then(
-        fn=lambda: gr.update(interactive=True),
-        inputs=[],
-        outputs=[btn_processar]
+        outputs=[zip_output, status_output],
     )
 
 if __name__ == "__main__":
-    # O Render fornece a porta correta na variável de ambiente PORT.
     porta = int(os.environ.get("PORT", 7860))
-    demo.queue()
-    demo.launch(server_name="0.0.0.0", server_port=porta, show_error=True)
+    demo.queue(max_size=10)
+    demo.launch(server_name="0.0.0.0", server_port=porta, show_error=True, max_threads=1)
