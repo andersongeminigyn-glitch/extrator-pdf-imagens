@@ -105,4 +105,5 @@ with gr.Blocks(title="Extrator de Imagens PDF - AndersonIM") as demo:
 if __name__ == "__main__":
     # O Render fornece a porta correta na variável de ambiente PORT.
     porta = int(os.environ.get("PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=porta)
+    demo.queue()
+    demo.launch(server_name="0.0.0.0", server_port=porta, show_error=True)
